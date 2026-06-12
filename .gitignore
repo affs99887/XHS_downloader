@@ -6,6 +6,8 @@ build/
 develop-eggs/
 dist/
 downloads/
+download_files/
+datas/
 eggs/
 .eggs/
 lib/
@@ -34,3 +36,4 @@ AGENTS.md
 .agent
 docs
 docx
+.idea/
