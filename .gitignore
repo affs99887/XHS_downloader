@@ -37,3 +37,5 @@ AGENTS.md
 docs
 docx
 .idea/
+.env
+

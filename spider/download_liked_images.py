@@ -9,7 +9,7 @@ from loguru import logger
 
 from apis.xhs_pc_apis import XHS_Apis
 from spider.spider import Data_Spider
-from xhs_utils.common_util import load_env
+from xhs_utils.common_util import load_or_login_cookies
 from xhs_utils.data_util import check_and_create_path, download_media, norm_str
 
 
@@ -222,9 +222,7 @@ def mark_note_downloaded(
 
 def main():
     args = parse_args()
-    cookies_str = load_env()
-    if not cookies_str:
-        raise RuntimeError("请先在 .env 中配置 COOKIES")
+    cookies_str = load_or_login_cookies(validate=True)
 
     output_base = args.output or os.path.abspath(os.path.join(os.path.dirname(__file__), "../download_files/likes"))
     run_output_root = args.run_dir or timestamp_run_dir(output_base)
@@ -305,3 +303,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+

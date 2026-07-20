@@ -180,21 +180,29 @@ pip install -r requirements.txt
 npm install
 ```
 
-### 🎨 配置 Cookie
+### 🎨 登录配置
 
-在项目根目录的 `.env` 文件中填入你的登录 Cookie：
+默认不需要手动复制 Cookie。首次运行入口时，如果项目根目录 `.env` 不存在或没有 `COOKIES`，程序会自动调用 PC 端二维码登录：
 
+```bash
+python -m spider.spider
 ```
+
+命令行中出现二维码后，使用小红书 App 扫码确认登录。登录成功后，cookies 会自动写入 `.env`，后续抓取 / 下载流程会继续执行。
+
+喜欢列表下载入口同样支持自动扫码：
+
+```bash
+Likes_downloader.bat
+```
+
+如果你已经有可用 Cookie，也可以手动预置 `.env`：
+
+```env
 COOKIES='your_cookie_here'
 ```
 
-Cookie 获取方式：浏览器登录小红书后，按 `F12` 打开开发者工具 → 网络 → Fetch/XHR → 找任意一个请求 → 复制请求头中的 `cookie` 字段。
-
-![image](https://github.com/user-attachments/assets/6a7e4ecb-0432-4581-890a-577e0eae463d)
-
-![image](https://github.com/user-attachments/assets/5e62bc35-d758-463e-817c-7dcaacbee13c)
-
-> **注意：必须是登录后的 Cookie，未登录状态无效。**
+> Cookie 有时效性，失效后删除 `.env` 中的 `COOKIES` 或置空，重新运行入口即可扫码更新。
 
 ### 🚀 运行项目
 
@@ -226,7 +234,7 @@ Spider_XHS/
 │   ├── xhs_pugongying_apis.py       # 蒲公英平台API（KOL数据）
 │   └── xhs_qianfan_apis.py          # 千帆平台API（分销商数据）
 ├── xhs_utils/
-│   ├── common_util.py               # 初始化工具（读取.env配置）
+│   ├── common_util.py               # 初始化工具（读取.env / 自动登录）
 │   ├── cookie_util.py               # Cookie解析
 │   ├── data_util.py                 # 数据处理（Excel保存、媒体下载）
 │   ├── xhs_util.py                  # PC端签名算法封装
@@ -313,5 +321,8 @@ ps: 请加群4、17、18，人满或者过期 issue | wx 提醒
 | group14 | group17 | group18 |
 |:--:|:--:|:--:|
 | <img width="280" alt="group14" src="https://github.com/user-attachments/assets/4ff4e202-7fc2-42f7-910a-e12d55456bd1" /> | <img width="280" alt="group17" src="https://github.com/user-attachments/assets/6406398d-a4c7-4b08-a92c-496ea10a4440" /> | <img width="280" alt="group18" src="https://github.com/user-attachments/assets/57f6a18c-d9d0-4343-b2eb-c32e1e991115" /> |
+
+
+
 
 
