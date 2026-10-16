@@ -13,11 +13,22 @@
 **专业的小红书数据采集 & 全域运营解决方案 & Agent Skills**
 
 [![Skills](https://img.shields.io/badge/skills-supported-success)](https://github.com/cv-cat/XhsSkills)
-[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
-[![Node.js](https://img.shields.io/badge/nodejs-20%2B-green)](https://nodejs.org/)
+[![Python](https://img.shields.io/badge/python-3.11-blue)](https://www.python.org/)
+[![Node.js](https://img.shields.io/badge/nodejs-22%2F24-green)](https://nodejs.org/)
 [![License](https://img.shields.io/badge/license-MIT-orange)](LICENSE)
 
 </div>
+
+## Windows 新电脑使用
+
+首次拉取后双击 **`Setup.bat`**，看到 `Setup complete` 后双击 **`Downloader.bat`**。
+安装器自动准备 Python 3.11 x64、Node 22/24、锁定依赖及项目专用 Chromium；缺少兼容运行环境时自动下载，不更改全局 PATH。
+支持 Windows 10/11 x64。更新代码后重跑安装器，已有 Cookie、配置和下载结果会保留。
+
+完整步骤、登录方式、命令示例、换电脑迁移和故障处理见 [Windows 安装与使用](WINDOWS_SETUP.md)。
+环境异常时双击 `Doctor.bat` 做离线检查。不要复制旧电脑的 `.venv`、`.runtime` 或 `node_modules`。
+
+---
 
 > **在 AI 大模型爆发的时代，内容运营的竞争本质是效率竞争。**
 > 本项目封装了小红书平台完整的数据采集与内容发布能力，为开发者构建 AI 运营智能体提供可靠、稳定的底层 API 支撑。
@@ -168,24 +179,18 @@ best_kols = your_ai_agent(kol_list, brand_profile)
 
 ## 🛠️ 快速开始
 
-### ⛳ 环境要求
+### ⛳ 环境要求与安装
 
-- Python 3.10+
-- Node.js 20+
-
-### 🎯 安装依赖
-
-```bash
-pip install -r requirements.txt
-npm install
-```
+Windows 用户运行 `Setup.bat` 即可完成安装，详见 [Windows 安装与使用](WINDOWS_SETUP.md)。
+运行基线为 Python 3.11 x64、Node.js 22/24；Python 固定版本依赖保存在 `requirements-lock.txt`，JavaScript 固定版本依赖保存在 `package-lock.json`。
+开发者手动安装时应在新建的虚拟环境中安装锁文件，并执行 `python -m playwright install chromium`。
 
 ### 🎨 登录配置
 
 默认不需要手动复制 Cookie。首次运行入口时，如果项目根目录 `.env` 不存在或没有 `COOKIES`，程序会自动调用 PC 端二维码登录：
 
 ```bash
-python -m spider.spider
+Downloader.bat xhs --likes --limit 20
 ```
 
 命令行中出现二维码后，使用小红书 App 扫码确认登录。登录成功后，cookies 会自动写入 `.env`，后续抓取 / 下载流程会继续执行。
@@ -204,18 +209,149 @@ COOKIES='your_cookie_here'
 
 > Cookie 有时效性，失效后删除 `.env` 中的 `COOKIES` 或置空，重新运行入口即可扫码更新。
 
-### 🚀 运行项目
+### 🚀 三个平台统一入口（推荐）
+
+Windows 下只需要记住一个文件：
+
+```bat
+Downloader.bat
+```
+
+双击它会显示中文菜单，先选小红书、抖音或微博，再粘贴分享内容。入口会自动调用
+对应下载器，三个平台的登录信息与输出目录互相隔离。
+
+也可以用一行命令直接下载：
+
+```bat
+Downloader.bat xhs "小红书笔记链接或完整分享文字"
+Downloader.bat xhs --likes --limit 20
+Downloader.bat douyin "抖音链接或完整分享口令"
+Downloader.bat douyin --login
+Downloader.bat weibo "微博UID、用户主页或带UID的作品链接" --days 30
+Downloader.bat weibo --set-cookie
+```
+
+统一输出位置：
+
+| 平台 | 默认内容 | 输出目录 |
+|------|----------|----------|
+| 小红书 | 单条笔记 | `download_files/xhs/notes/` |
+| 小红书 | 当前账号喜欢列表 | `download_files/xhs/likes/` |
+| 抖音 | 视频、图集等 | `download_files/douyin/` |
+| 微博 | 指定用户最近 30 天的图片、视频、Live Photo | `download_files/weibo/` |
+
+小红书未登录或 Cookie 过期时会自动显示二维码；抖音公开内容可以先直接尝试，受限
+时从菜单选择“登录或更新抖音 Cookie”；微博公开内容可以先不带 Cookie，受限时再
+配置 `weibo_cookie.txt`。
+
+原始开发示例仍可运行：
 
 ```bash
 python -m spider.spider
 ```
 
+### 🎵 抖音无水印下载
+
+项目已内置 `jiji262/douyin-downloader`，支持抖音公开视频、图集、合集、主页作品、
+音乐、直播及热榜/搜索等能力。上游源码隔离在 `vendor/douyin_downloader`，不会与
+现有小红书接口和 Cookie 混用。
+
+首次安装依赖后，再安装浏览器组件：
+
+```bash
+python -m pip install -r requirements-lock.txt
+python -m playwright install chromium
+```
+
+下载单个视频、图集或分享口令：
+
+```bash
+python -m spider.douyin_downloader -u "https://v.douyin.com/xxxx/"
+python -m spider.douyin_downloader -u "复制打开抖音…… https://v.douyin.com/xxxx/"
+```
+
+Windows 也可以直接运行：
+
+```bat
+Douyin_downloader.bat -u "https://www.douyin.com/video/作品ID"
+```
+
+抖音当前风控较严格，建议首次使用先执行登录；部分公开作品也可以直接下载：
+
+```bash
+python -m spider.douyin_downloader login
+```
+
+登录成功后，Cookie 会写入本地 `douyin_config.yml` 和 `douyin_cookies.json`；
+这两个文件均已加入 `.gitignore`。首次运行会根据
+`douyin_config.example.yml` 自动生成本地配置，默认输出目录为
+`download_files/douyin/`。
+
+查看全部上游参数：
+
+```bash
+python -m spider.douyin_downloader --help
+```
+
+当前合入的上游版本、提交号和许可证记录在
+`vendor/douyin_downloader/UPSTREAM.md`。
+
+### 🧣 微博图片 / 视频下载
+
+项目已直接内置 `dataabc/weibo-crawler`，按微博用户 ID 批量抓取主页微博，并下载
+原图、视频和 Live Photo。上游源码隔离在 `vendor/weibo_crawler`，运行配置保存在
+项目根目录，不会与小红书、抖音 Cookie 混用。
+
+首次运行会根据 `weibo_config.example.json` 自动创建本地
+`weibo_config.json`。直接指定一个或多个用户 ID：
+
+```bash
+python -m spider.weibo_downloader -u "1669879400"
+python -m spider.weibo_downloader -u "用户ID一" -u "用户ID二" --since-date 30
+```
+
+Windows 也可以直接运行：
+
+```bat
+Weibo_downloader.bat -u "1669879400"
+```
+
+默认抓取最近 30 天，下载原创和转发微博中的图片、视频及 Live Photo，结果写入
+`download_files/weibo/`。也可以编辑 `weibo_config.json`，在
+`user_id_list` 中长期维护多个用户 ID。
+
+公开微博可尝试不带 Cookie 抓取；遇到访问限制、可见范围不足或验证码时，在
+`weibo_config.json` 的 `cookie` 字段填写微博网页 Cookie，或设置
+`WEIBO_COOKIE` 环境变量。Cookie 文件也受支持，例如：
+
+```json
+{
+  "cookie": "weibo_cookie.txt"
+}
+```
+
+入口同时保留了上游 Flask API：
+
+```bash
+python -m spider.weibo_downloader --serve --port 5000
+```
+
+该上游的定位是“按用户 ID 抓取主页时间线”。统一入口可以从常见用户主页或
+`weibo.com/数字UID/作品ID` 链接中自动提取 UID，但实际仍会按该用户的时间线批量
+抓取，并不是只下载链接中的单条微博。当前合入的提交号和许可证状态记录在
+`vendor/weibo_crawler/UPSTREAM.md`；该上游在本次合入的提交中未提供许可证，
+对外分发或商用前应先取得上游作者授权。
+
 ### 🐳 Docker 部署（可选）
 
 ```bash
-docker build -t spider_xhs .
-docker run -e COOKIES='your_cookie_here' spider_xhs
+docker build -t xhs-downloader .
+docker run --rm -it --init --shm-size=1g xhs-downloader
 ```
+
+默认运行三平台统一入口。数据持久化、Cookie 配置及无桌面容器的抖音登录限制见
+[Windows 使用说明中的 Docker 章节](WINDOWS_SETUP.md#docker可选)。
+构建会排除本机 Cookie、配置、下载文件和虚拟环境。
 
 ---
 
@@ -246,7 +382,11 @@ Spider_XHS/
 │   ├── xhs_rap.js                   # PC端 x-rap-param JSVMP 补环境生成脚本
 │   ├── xhs_creator_260411.js        # 创作者平台签名核心JS（最新版）
 │   └── ...
-├── .env                             # Cookie配置（不要提交到git）
+├── Setup.bat                        # Windows 一键安装
+├── Doctor.bat                       # 离线环境检查
+├── Downloader.bat                   # 三平台统一入口
+├── WINDOWS_SETUP.md                 # Windows 部署与使用说明
+├── .env.example                     # 空白 Cookie 模板；真实 .env 不进入 Git
 ├── requirements.txt
 ├── Dockerfile
 └── package.json

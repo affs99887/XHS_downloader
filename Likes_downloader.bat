@@ -7,8 +7,8 @@ set XHS_QR_FULL_BLOCK=1
 
 if not exist ".venv\Scripts\python.exe" (
   echo Python virtual environment not found: .venv\Scripts\python.exe
-  echo Run the project setup first.
-  pause
+  echo Run Setup.bat first.
+  if not defined CI pause
   exit /b 1
 )
 
@@ -17,7 +17,7 @@ echo If COOKIES is missing or expired, scan the QR code shown in this terminal.
 echo If available, a backup PNG is saved under download_files.
 echo Output: download_files\likes
 echo.
-".venv\Scripts\python.exe" -m spider.download_liked_images %*
+".venv\Scripts\python.exe" -B scripts\launch_windows.py spider.download_liked_images %*
 set EXIT_CODE=%ERRORLEVEL%
 
 echo.
@@ -26,6 +26,6 @@ if "%EXIT_CODE%"=="0" (
 ) else (
   echo Failed with exit code %EXIT_CODE%.
 )
-pause
+if not defined CI pause
 exit /b %EXIT_CODE%
 

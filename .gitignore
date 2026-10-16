@@ -39,3 +39,27 @@ docx
 .idea/
 .env
 
+# Douyin downloader runtime config and login cookies
+douyin_config.yml
+douyin_cookies.json
+.cookies.json
+
+# Weibo crawler runtime config, cookies and logs
+weibo_config.json
+weibo_cookie.txt
+user_id_list.txt
+log/
+
+
+# Isolated build and deployment environments
+/.worktrees/
+/.runtime/
+/.deployment-test/
+
+# Local credentials and downloader databases
+.env.*
+!.env.example
+*.db
+*.db-*
+*.sqlite*
+/vendor/weibo_crawler/config.json
