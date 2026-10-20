@@ -11,6 +11,8 @@ import sys
 from pathlib import Path
 from typing import Optional, Sequence
 
+from spider.download_batch import DownloadBatch, add_batch_options, batch_option_arguments
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -36,21 +38,23 @@ def run_xhs(arguments: argparse.Namespace) -> int:
         forwarded.append("--likes")
     elif arguments.target:
         forwarded.append(arguments.target)
-    else:
+    elif not getattr(arguments, "retry_failed", None):
         raise ValueError("请提供小红书笔记链接，或使用 --likes")
     if arguments.limit:
         forwarded.extend(["--limit", str(arguments.limit)])
     if arguments.output:
         forwarded.extend(["--output", arguments.output])
+    forwarded.extend(batch_option_arguments(arguments))
     return run_module("spider.xhs_downloader", forwarded)
 
 
 def run_douyin(arguments: argparse.Namespace) -> int:
     if arguments.login:
         return run_module("spider.douyin_downloader", ["login"])
-    if not arguments.target:
+    if not arguments.target and not getattr(arguments, "retry_failed", None):
         raise ValueError("请提供抖音链接或完整分享口令")
-    return run_module("spider.douyin_downloader", ["-u", arguments.target])
+    forwarded = ["-u", arguments.target] if arguments.target else []
+    return run_module("spider.douyin_downloader", [*forwarded, *batch_option_arguments(arguments)])
 
 
 def save_weibo_cookie(cookie: str) -> Path:
@@ -77,7 +81,7 @@ def run_weibo(arguments: argparse.Namespace) -> int:
         cookie_path = save_weibo_cookie(cookie)
         print(f"微博 Cookie 已保存到：{cookie_path}")
         return 0
-    if not arguments.targets:
+    if not arguments.targets and not getattr(arguments, "retry_failed", None):
         raise ValueError("请提供微博 UID、用户主页或带 UID 的微博链接")
     forwarded = []
     for target in arguments.targets:
@@ -86,6 +90,7 @@ def run_weibo(arguments: argparse.Namespace) -> int:
         forwarded.extend(["--since-date", arguments.since_date])
     if arguments.only_original:
         forwarded.append("--only-original")
+    forwarded.extend(batch_option_arguments(arguments))
     return run_module("spider.weibo_downloader", forwarded)
 
 
@@ -105,6 +110,8 @@ def _prompt(prompt: str) -> str:
 
 
 def interactive_menu() -> int:
+    image_filter = "legs"
+    rules = {"legs": "人物且有可见腿部", "stockings": "黑丝袜（实验）", "person": "人物", "off": "关闭"}
     while True:
         print("\n==============================")
         print(" 小红书 / 抖音 / 微博统一下载器")
@@ -112,8 +119,12 @@ def interactive_menu() -> int:
         print("1. 小红书")
         print("2. 抖音")
         print("3. 微博")
+        print("4. 筛选已有图片")
+        print(f"5. 更改图片筛选规则（当前：{rules[image_filter]}）")
         print("0. 退出")
+        print("下载失败项在本批结束后询问重试。")
         choice = input("\n请选择平台：").strip()
+        filter_options = ["--image-filter", image_filter]
 
         if choice == "0":
             return 0
@@ -123,13 +134,13 @@ def interactive_menu() -> int:
             mode = input("请选择：").strip()
             if mode == "1":
                 target = _prompt("粘贴小红书内容：")
-                code = run_module("spider.xhs_downloader", [target])
+                code = run_module("spider.xhs_downloader", [target, *filter_options])
             elif mode == "2":
                 limit = input("最多下载多少条（直接回车=全部）：").strip()
                 forwarded = ["--likes"]
                 if limit:
                     forwarded.extend(["--limit", limit])
-                code = run_module("spider.xhs_downloader", forwarded)
+                code = run_module("spider.xhs_downloader", [*forwarded, *filter_options])
             else:
                 print("无效选择。")
                 continue
@@ -139,7 +150,7 @@ def interactive_menu() -> int:
             mode = input("请选择：").strip()
             if mode == "1":
                 target = _prompt("粘贴抖音内容：")
-                code = run_module("spider.douyin_downloader", ["-u", target])
+                code = run_module("spider.douyin_downloader", ["-u", target, *filter_options])
             elif mode == "2":
                 code = run_module("spider.douyin_downloader", ["login"])
             else:
@@ -155,7 +166,7 @@ def interactive_menu() -> int:
                 forwarded = ["-u", target]
                 if days:
                     forwarded.extend(["--since-date", days])
-                code = run_module("spider.weibo_downloader", forwarded)
+                code = run_module("spider.weibo_downloader", [*forwarded, *filter_options])
             elif mode == "2":
                 cookie = getpass.getpass("粘贴微博网页 Cookie（输入不会显示）：").strip()
                 if not cookie:
@@ -167,11 +178,19 @@ def interactive_menu() -> int:
             else:
                 print("无效选择。")
                 continue
+        elif choice == "4":
+            folder = _prompt("粘贴需要筛选的图片文件夹路径：").strip('"')
+            code = run_module("spider.downloader", ["filter", folder, *filter_options])
+        elif choice == "5":
+            print("1. 人物且有可见腿部\n2. 黑丝袜（实验，不确定的进入待复核）\n3. 人物\n4. 关闭筛选")
+            mode = input("请选择规则：").strip()
+            image_filter = {"1": "legs", "2": "stockings", "3": "person", "4": "off"}.get(mode, image_filter)
+            continue
         else:
             print("无效选择。")
             continue
 
-        print("\n下载完成。" if code == 0 else f"\n执行失败，退出码：{code}")
+        print("\n处理完成。" if code == 0 else f"\n仍有失败项或筛选错误，请查看本次日志。退出码：{code}")
         _wait_for_menu()
 
 
@@ -205,6 +224,13 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="安全提示并保存微博 Cookie",
     )
+    for platform_parser in (xhs, douyin, weibo):
+        add_batch_options(platform_parser)
+
+    image_filter = subparsers.add_parser("filter", help="筛选已有图片（保留目录结构）")
+    image_filter.add_argument("folder", type=Path, help="图片文件夹")
+    image_filter.add_argument("--preview", action="store_true", help="仅生成筛选报告，不移动图片")
+    add_batch_options(image_filter)
     return parser
 
 
@@ -226,6 +252,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             return run_douyin(arguments)
         if arguments.platform == "weibo":
             return run_weibo(arguments)
+        if arguments.platform == "filter":
+            from spider.image_filter import collect_images
+            with DownloadBatch.from_arguments("filter", arguments) as batch:
+                batch.images.update(collect_images(arguments.folder))
+                return batch.finish(preview=arguments.preview)
     except ValueError as error:
         parser.error(str(error))
     return 2

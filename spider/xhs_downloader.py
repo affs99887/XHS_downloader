@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import re
 import subprocess
@@ -11,6 +10,8 @@ import sys
 from pathlib import Path
 from typing import Optional, Sequence
 from urllib.parse import urlparse
+
+from spider.download_batch import DownloadBatch, add_batch_options, batch_option_arguments, read_failure_tasks
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -86,47 +87,47 @@ def run_likes(arguments: argparse.Namespace) -> int:
         command.append("--overwrite-images")
     if arguments.continue_past_downloaded:
         command.append("--continue-past-downloaded")
+    command.extend(batch_option_arguments(arguments))
     return subprocess.run(command, cwd=PROJECT_ROOT, check=False).returncode
 
 
 def run_note(arguments: argparse.Namespace) -> int:
-    from loguru import logger
-
-    from spider.download_liked_images import save_note_media
+    from spider.download_liked_images import download_note_task
     from spider.spider import Data_Spider
     from xhs_utils.common_util import load_or_login_cookies
-    from xhs_utils.data_util import check_and_create_path
+    with DownloadBatch.from_arguments("xhs", arguments) as batch:
+        def run():
+            cookies = load_or_login_cookies(validate=True)
+            data_spider = Data_Spider()
+            if arguments.retry_failed:
+                tasks = read_failure_tasks(arguments.retry_failed, "xhs")
+                for task in tasks:
+                    payload = task["payload"]
+                    if payload["kind"] == "xhs_start":
+                        url = resolve_xhs_url(payload["target"])
+                        output = Path(payload.get("output_root") or arguments.output or DEFAULT_NOTE_OUTPUT).resolve()
+                        download_note_task(batch, data_spider, cookies, url, output,
+                                           dry_run=arguments.dry_run,
+                                           use_original_images=not arguments.compressed_images)
+                        continue
+                    if payload["kind"] != "xhs_note":
+                        raise ValueError("喜欢列表的分页失败请使用 --likes --retry-failed 重试")
+                    download_note_task(batch, data_spider, cookies, payload["note_url"],
+                                       Path(payload["output_root"]), dry_run=arguments.dry_run,
+                                       use_original_images=payload.get("use_original_images", True),
+                                       record_file=payload.get("record_file"), retry_paths=payload.get("retry_paths"))
+            else:
+                note_url = resolve_xhs_url(arguments.target)
+                output = Path(arguments.output).resolve() if arguments.output else DEFAULT_NOTE_OUTPUT
+                download_note_task(batch, data_spider, cookies, note_url, output,
+                                   dry_run=arguments.dry_run,
+                                   use_original_images=not arguments.compressed_images,
+                                   overwrite_images=arguments.overwrite_images)
 
-    try:
-        note_url = resolve_xhs_url(arguments.target)
-        cookies = load_or_login_cookies(validate=True)
-        success, message, note_info = Data_Spider().spider_note(note_url, cookies)
-        if not success or not note_info:
-            raise RuntimeError(f"笔记详情获取失败: {message}")
-
-        output = Path(arguments.output).resolve() if arguments.output else DEFAULT_NOTE_OUTPUT
-        check_and_create_path(output)
-        media_count, downloaded_count, original_count, fallback_count = save_note_media(
-            note_info,
-            output,
-            dry_run=arguments.dry_run,
-            use_original_images=not arguments.compressed_images,
-            overwrite_images=arguments.overwrite_images,
-        )
-        if not arguments.dry_run:
-            metadata_path = output / f"{note_info['note_id']}_info.json"
-            metadata_path.write_text(
-                json.dumps(note_info, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
-        logger.info(
-            f"完成：媒体 {media_count} 个，新增下载 {downloaded_count} 个，"
-            f"原图 {original_count} 张，预览图回退 {fallback_count} 张；目录：{output}"
-        )
-        return 0
-    except Exception as error:
-        logger.exception(f"小红书下载失败: {error}")
-        return 1
+        batch.attempt("xhs_start", "准备小红书下载",
+                      {"kind": "xhs_start", "target": arguments.target,
+                       "output_root": str(Path(arguments.output).resolve() if arguments.output else DEFAULT_NOTE_OUTPUT)}, run)
+        return batch.finish(dry_run=arguments.dry_run)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -153,6 +154,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="喜欢列表遇到已下载笔记后继续向后扫描",
     )
+    add_batch_options(parser)
     return parser
 
 
@@ -164,7 +166,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if arguments.target:
             parser.error("--likes 模式不需要笔记链接")
         return run_likes(arguments)
-    if not arguments.target:
+    if not arguments.target and not arguments.retry_failed:
         parser.error("请粘贴小红书笔记链接/分享文字，或使用 --likes")
     return run_note(arguments)
 

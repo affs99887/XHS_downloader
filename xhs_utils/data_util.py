@@ -3,6 +3,7 @@ import os
 import re
 import time
 from pathlib import Path
+from uuid import uuid4
 
 import openpyxl
 import requests
@@ -211,21 +212,31 @@ def download_media(path, name, url, type):
     if not url:
         raise ValueError(f'{type} url is empty: {name}')
     file_path = Path(path) / f'{name}.{"jpg" if type == "image" else "mp4"}'
-    if type == 'image':
-        response = requests.get(url, timeout=REQUEST_TIMEOUT)
-        response.raise_for_status()
-        content = response.content
-        with open(file_path, mode="wb") as f:
-            f.write(content)
-    elif type == 'video':
-        res = requests.get(url, stream=True, timeout=REQUEST_TIMEOUT)
-        res.raise_for_status()
-        size = 0
-        chunk_size = 1024 * 1024
-        with open(file_path, mode="wb") as f:
-            for data in res.iter_content(chunk_size=chunk_size):
-                f.write(data)
-                size += len(data)
+    if type not in {'image', 'video'}:
+        raise ValueError(f'Unsupported media type: {type}')
+    temporary = file_path.with_name(file_path.name + '.' + uuid4().hex + '.part')
+    try:
+        with requests.get(url, stream=True, timeout=REQUEST_TIMEOUT) as response:
+            response.raise_for_status()
+            size = 0
+            with temporary.open('wb') as stream:
+                for data in response.iter_content(chunk_size=1024 * 256):
+                    stream.write(data)
+                    size += len(data)
+            if not size:
+                raise ValueError('下载内容为空')
+            length = response.headers.get('Content-Length')
+            if length and not response.headers.get('Content-Encoding') and size != int(length):
+                raise ValueError(f'下载不完整：预期 {length} 字节，实际 {size} 字节')
+        if type == 'image':
+            from PIL import Image
+            with Image.open(temporary) as image:
+                image.verify()
+            with Image.open(temporary) as image:
+                image.load()
+        temporary.replace(file_path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 def save_user_detail(user, path):
     with open(Path(path) / 'detail.txt', mode="w", encoding="utf-8") as f:

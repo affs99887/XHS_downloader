@@ -80,10 +80,29 @@ def check_files():
         pass
 
 
+def check_image_filter():
+    import numpy as np
+    import onnxruntime
+    from spider.clip_filter import (CLIP_REVISION, EMBEDDINGS_PATH, FASHION_REVISION,
+                                    FASHION_EMBEDDINGS_PATH, PROMPTS)
+    if 'CPUExecutionProvider' not in onnxruntime.get_available_providers():
+        raise RuntimeError('ONNX Runtime CPU backend is missing')
+    for path, revision, dimension in ((EMBEDDINGS_PATH, CLIP_REVISION, 512),
+                                      (FASHION_EMBEDDINGS_PATH, FASHION_REVISION, 768)):
+        with np.load(path, allow_pickle=False) as data:
+            vectors = data['embeddings']
+            if str(data['revision']) != revision or list(data['labels']) != list(PROMPTS):
+                raise RuntimeError('Image classifier vectors are incompatible')
+            if vectors.shape != (len(PROMPTS), dimension) or not np.isfinite(vectors).all():
+                raise RuntimeError('Image classifier vectors are corrupt')
+    print('  Local image classifiers and bundled text vectors OK (no model downloads)')
+
+
 def main():
     failures = []
     for name, check in [('Python', check_python), ('locked dependencies', check_dependencies),
                         ('Node and local signatures', check_node), ('downloader imports and FFmpeg', check_entrypoints),
+                        ('local image classification runtime', check_image_filter),
                         ('Chromium offline launch', check_browser), ('templates and write permission', check_files)]:
         try:
             check()

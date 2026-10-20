@@ -9,6 +9,7 @@ opencv-python
 numpy
 qrcode
 Pillow
+onnxruntime==1.31.0
 
 # Vendored douyin-downloader runtime
 httpx>=0.25

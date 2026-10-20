@@ -18,6 +18,8 @@ import sys
 import threading
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence
+
+from spider.download_batch import DownloadBatch, add_batch_options, read_failure_tasks
 from urllib.parse import parse_qs, urlparse
 
 
@@ -248,6 +250,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="API 模式下同时启动上游每 10 分钟刷新任务",
     )
+    add_batch_options(parser)
     return parser
 
 
@@ -324,7 +327,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             port=arguments.port,
             scheduled_refresh=arguments.scheduled_refresh,
         )
-    if not has_crawl_targets(config):
+    if not has_crawl_targets(config) and not arguments.retry_failed:
         parser.print_usage(sys.stderr)
         print(
             f"{parser.prog}: error: 请通过 -u/--user-id 或 "
@@ -332,7 +335,51 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             file=sys.stderr,
         )
         return 2
-    return run_crawler(config)
+    return run_download_batch(config, arguments)
+
+
+def run_download_batch(config, arguments):
+    from spider.media_observers import observe_weibo
+
+    activate_vendor()
+    from weibo import Weibo
+
+    output_root = (VENDOR_ROOT / config["output_directory"]).resolve()
+    with DownloadBatch.from_arguments("weibo", arguments) as batch:
+        # Importing the upstream crawler configures its loggers.
+        batch.capture_loggers()
+        def guarded(action):
+            try:
+                return action()
+            except SystemExit as error:
+                raise RuntimeError(f"微博入口提前退出：{error.code}") from error
+
+        if arguments.retry_failed:
+            def replay():
+                crawler = Weibo(config)
+                for task in read_failure_tasks(arguments.retry_failed, "weibo"):
+                    payload = task["payload"]
+                    if payload["kind"] == "weibo_media":
+                        with observe_weibo(Weibo, batch, Path(payload["output_root"])):
+                            crawler.download_one_file(payload["url"], payload["file_path"], payload["media_type"],
+                                                      payload["weibo_id"], payload["created_at"])
+                    elif payload["kind"] == "weibo_user":
+                        with observe_weibo(Weibo, batch, Path(payload["output_root"])):
+                            crawler.initialize_info(copy.deepcopy(payload["user_config"]))
+                            crawler.query = payload.get("query", "")
+                            crawler.get_pages()
+                    else:
+                        run_config = copy.deepcopy(config)
+                        run_config.update(payload.get("overrides", {}))
+                        with observe_weibo(Weibo, batch, output_root):
+                            run_crawler(run_config)
+            batch.attempt("weibo_start", "加载微博失败清单", {"kind": "weibo_start"}, lambda: guarded(replay))
+            return batch.finish()
+        with observe_weibo(Weibo, batch, output_root):
+            overrides = {key: config[key] for key in ("user_id_list", "since_date", "end_date") if key in config}
+            batch.attempt("weibo_start", "微博批量下载", {"kind": "weibo_start", "overrides": overrides},
+                          lambda: guarded(lambda: run_crawler(config)))
+            return batch.finish()
 
 
 if __name__ == "__main__":

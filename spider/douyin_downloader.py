@@ -8,12 +8,15 @@ the vendor directory to ``sys.path`` only while the Douyin command is running.
 
 from __future__ import annotations
 
+import argparse
 import os
 import re
 import shutil
 import sys
 from pathlib import Path
 from typing import List, Optional, Sequence
+
+from spider.download_batch import DownloadBatch, add_batch_options, read_failure_tasks
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -95,7 +98,7 @@ def configure_utf8_console() -> None:
             reconfigure(encoding="utf-8", errors="replace")
 
 
-def _run_downloader(arguments: Sequence[str]) -> int:
+def _invoke_upstream(arguments: Sequence[str]) -> int:
     configure_utf8_console()
     activate_vendor()
     from cli.main import main as upstream_main
@@ -115,6 +118,46 @@ def _run_downloader(arguments: Sequence[str]) -> int:
         sys.argv = previous_argv
         os.chdir(previous_cwd)
     return 0
+
+
+def _run_downloader(arguments: Sequence[str]) -> int:
+    configure_utf8_console()
+    parser = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
+    add_batch_options(parser)
+    batch_args, forwarded = parser.parse_known_args(arguments)
+    if has_option(forwarded, "-h", "--help", "--version", "--serve", "--hot-board", "--search"):
+        if has_option(forwarded, "-h", "--help"):
+            parser.print_help()
+        return _invoke_upstream(forwarded)
+    activate_vendor()
+    from spider.media_observers import observe_douyin
+    active_arguments = []
+
+    def invoke(arguments):
+        active_arguments[:] = list(arguments)
+        try:
+            return _invoke_upstream(arguments)
+        except SystemExit as error:
+            raise RuntimeError(f"抖音入口提前退出，退出码：{error.code}") from error
+
+    with DownloadBatch.from_arguments("douyin", batch_args) as batch:
+        force_ids = set()
+        with observe_douyin(batch, active_arguments, invoke, force_ids):
+            def run():
+                if batch_args.retry_failed:
+                    for task in read_failure_tasks(batch_args.retry_failed, "douyin"):
+                        payload = task["payload"]
+                        if payload.get("aweme_id"):
+                            force_ids.add(str(payload["aweme_id"]))
+                        invoke(payload["arguments"])
+                else:
+                    invoke(forwarded)
+                if not batch.successes and not batch.failures:
+                    raise RuntimeError("抖音入口未执行下载任务，请检查配置和链接")
+
+            batch.attempt("douyin_start", "抖音下载入口",
+                          {"kind": "douyin_start", "arguments": list(forwarded)}, run)
+            return batch.finish()
 
 
 def _run_login(arguments: Sequence[str]) -> int:
